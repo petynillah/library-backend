@@ -20,8 +20,8 @@ function Footer(){
         <ul>
             <li className="bold">Usefull links</li>
             <li><a href="/"> Home</a></li>
-            <li><a href="">Login</a></li>
-            <li><a href="">Register</a></li>
+            <li><a href="http://localhost:5174/studentlogin" target="_blank">Login</a></li>
+            <li><a href="http://localhost:5174/studentregister" target="_blank">Register</a></li>
             <li><a href="/history">History</a></li>
             <li><a href="/services">Services offered</a></li>
             <li><a href="/services">Eligibility</a></li>

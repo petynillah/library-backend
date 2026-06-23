@@ -6,8 +6,6 @@ import History from './pages/History'
 import Services from './pages/Services'
 import Nav from './components/Nav'
 import Footer from './components/Footer'
-import Studentreg from './pages/Studentreg'
-import Studentlogin from './pages/Studentlogin'
 
 
 function App() {
@@ -19,8 +17,7 @@ function App() {
     <Route path="/"  element={<Home/>}/>
     <Route path ="/history" element={<History/>}/>
     <Route path="/services" element={<Services/>}/>
-    <Route path='/studentlogin' element={<Studentlogin/>}/>
-    <Route path='/studentreg' element={<Studentreg/>}/>
+    
   </Routes>
     <Footer/>
   </BrowserRouter>
