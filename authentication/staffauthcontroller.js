@@ -24,12 +24,11 @@ function issueTrustedDeviceToken(staffId, res) {
   trustedDevices.set(deviceToken, { staffId, expiresAt });
 
   res.cookie('trustedDevice', deviceToken, {
-    httpOnly: true,
-    secure: process.env.NODE_ENV === 'production', // requires HTTPS in prod
-    sameSite: 'lax',
-    maxAge: 30 * 24 * 60 * 60 * 1000
-  });
-}
+  httpOnly: true,
+  secure: process.env.NODE_ENV === 'production',
+  sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
+  maxAge: 30 * 24 * 60 * 60 * 1000
+});
 
 function isDeviceTrusted(req, staffId) {
   const deviceToken = req.cookies?.trustedDevice;
@@ -360,8 +359,11 @@ exports.revokeAllTrustedDevices = async (req, res) => {
     }
 
     // Also clear the cookie on this current browser, since it's one of the ones just revoked
-    res.clearCookie('trustedDevice');
-
+    res.clearCookie('trustedDevice', {
+        httpOnly: true,
+        secure: process.env.NODE_ENV === 'production',
+        sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax'
+      });
     return res.status(200).json({
       success: true,
       message: `Revoked ${revokedCount} trusted device(s). All devices will require verification code on next login.`
@@ -380,8 +382,11 @@ exports.revokeCurrentDevice = async (req, res) => {
       trustedDevices.delete(deviceToken);
     }
 
-    res.clearCookie('trustedDevice');
-
+    res.clearCookie('trustedDevice', {
+        httpOnly: true,
+        secure: process.env.NODE_ENV === 'production',
+        sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax'
+      });
     return res.status(200).json({
       success: true,
       message: 'This device will require verification code on next login.'
