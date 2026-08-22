@@ -29,7 +29,7 @@ function issueTrustedDeviceToken(staffId, res) {
   sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
   maxAge: 30 * 24 * 60 * 60 * 1000
 });
-
+}
 function isDeviceTrusted(req, staffId) {
   const deviceToken = req.cookies?.trustedDevice;
   if (!deviceToken) return false;
