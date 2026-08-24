@@ -1,5 +1,5 @@
 const sequelize = require("./authentication/database.js"); // Establishes your local connection to MySQL
-//const app = require("./app.js");
+const app = require("./app.js");
 
 const port = process.env.PORT || 8080;
 

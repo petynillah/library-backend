@@ -11,7 +11,7 @@ app.use(express.json());
 // FIXED: origins now come from an env var instead of being hardcoded to localhost ports.
 // Also fixes a real bug — port 5177 (student-dash, per nginx.conf) was missing from the
 // original hardcoded list even for local dev.
-const defaultDevOrigins = 'http://localhost:5173,http://localhost:5174,http://localhost:5175,http://localhost:5176,http://localhost:5177';
+const defaultDevOrigins = 'http://localhost:5173,http://localhost:5175,http://localhost:5176,http://localhost:5177';
 const allowedOrigins = (process.env.ALLOWED_ORIGINS || defaultDevOrigins)
   .split(',')
   .map((origin) => origin.trim())

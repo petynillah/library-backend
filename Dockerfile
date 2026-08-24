@@ -17,4 +17,4 @@ COPY . .
 EXPOSE 8080
 
 # 7. Start the application
-CMD ["node", "bookServer.js"]
+CMD ["node", "index.js"]
