@@ -17,7 +17,16 @@ const allowedOrigins = (process.env.ALLOWED_ORIGINS || defaultDevOrigins)
   .filter(Boolean);
 
 app.use(cors({
-  origin: allowedOrigins,
+  origin: (origin, callback) => {
+    console.log('Incoming request Origin:', origin);
+    console.log('Allowed list:', JSON.stringify(allowedOrigins));
+    if (!origin || allowedOrigins.includes(origin)) {
+      callback(null, true);
+    } else {
+      console.log('❌ Origin REJECTED:', origin);
+      callback(new Error('Not allowed by CORS'));
+    }
+  },
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization'],
   credentials: true
