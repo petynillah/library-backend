@@ -46,7 +46,5 @@ app.use('/api', shelfroute);
 const categoryroute = require('./category/categoryRoute.js');
 app.use('/api', categoryroute);
 
-const userroute = require('./user/userroute.js');
-app.use("/api", userroute);
 
 module.exports = app;
