@@ -1,4 +1,5 @@
 const express = require("express");
+console.log('🔥🔥🔥 BUILD CHECK: app.js loaded at', new Date().toISOString(), '- VERSION 2');
 const cors = require('cors');
 require('dotenv').config();
 const cookieParser = require('cookie-parser');
