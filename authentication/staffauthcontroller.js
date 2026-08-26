@@ -1,67 +1,70 @@
 const StaffUser = require('./staffauthmodel');
+const TrustedDevice = require('./trusteddevicemodel');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const crypto = require('crypto');
+const { Op } = require('sequelize');
 
 const JWT_SECRET = process.env.JWT_SECRET;
-
 
 if (!JWT_SECRET) {
   throw new Error("CRITICAL: JWT_SECRET is not defined in the environment variables.");
 }
 
 // ==========================================
-// TEMPORARY TRUSTED-DEVICE STORE (in-memory)
-// TODO: move to a DB table (device_token, staff_id, expires_at) before
-// production / multi-instance deployment — this Map resets on restart.
+// PERSISTENT TRUSTED-DEVICE DATABASE HELPERS
 // ==========================================
-const trustedDevices = new Map(); // key: deviceToken -> { staffId, expiresAt }
 
-function issueTrustedDeviceToken(staffId, res) {
+async function issueTrustedDeviceToken(staffId, res) {
   const deviceToken = crypto.randomBytes(32).toString('hex');
-  const expiresAt = Date.now() + 30 * 24 * 60 * 60 * 1000; // 30 days
+  const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000); // 30 days
 
-  trustedDevices.set(deviceToken, { staffId, expiresAt });
+  await TrustedDevice.create({
+    device_token: deviceToken,
+    staff_id: staffId,
+    expires_at: expiresAt
+  });
 
   res.cookie('trustedDevice', deviceToken, {
-  httpOnly: true,
-  secure: process.env.NODE_ENV === 'production',
-  sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
-  maxAge: 30 * 24 * 60 * 60 * 1000
-});
+    httpOnly: true,
+    secure: process.env.NODE_ENV === 'production',
+    sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
+    maxAge: 30 * 24 * 60 * 60 * 1000
+  });
 }
-function isDeviceTrusted(req, staffId) {
+
+async function isDeviceTrusted(req, staffId) {
   const deviceToken = req.cookies?.trustedDevice;
   if (!deviceToken) return false;
 
-  const record = trustedDevices.get(deviceToken);
+  const record = await TrustedDevice.findOne({ where: { device_token: deviceToken } });
   if (!record) return false;
 
-  if (Date.now() > record.expiresAt) {
-    trustedDevices.delete(deviceToken);
+  if (new Date() > record.expires_at) {
+    await record.destroy(); 
     return false;
   }
 
-  return record.staffId === staffId;
+  // FIX: Cast both sides to String to prevent type-mismatch bugs (e.g., "1" === 1 is false)
+  return String(record.staff_id) === String(staffId);
 }
+
 // ==========================================
 // TEMPORARY OTP STORE (in-memory)
-// TODO: Replace with a DB table or Redis before production / multi-instance
-// deployment — this Map is wiped on every server restart and won't work
-// across multiple server processes.
 // ==========================================
-const otpStore = new Map(); // key: staff.id -> { otp, expiresAt }
+const otpStore = new Map(); 
 
 function generateOtp() {
-  return crypto.randomInt(100000, 999999).toString(); // 6-digit code
-}// ==========================================
+  return crypto.randomInt(100000, 999999).toString(); 
+}
+
+// ==========================================
 // 1. CREATE (Staff Registration)
 // ==========================================
 exports.registerStaff = async (req, res) => {
   try {
     const { name, age, id_number, occupation, gender, password } = req.body;
 
-    // Dynamic validation check
     const missingFields = [];
     if (!name) missingFields.push('name');
     if (!age) missingFields.push('age');
@@ -78,11 +81,9 @@ exports.registerStaff = async (req, res) => {
       });
     }
 
-    // Hash the password safely
     const salt = await bcrypt.genSalt(10);
     const hashedPassword = await bcrypt.hash(password, salt);
 
-    // Create the base record inside MySQL
     const newStaff = await StaffUser.create({
       name,
       gender,
@@ -93,11 +94,9 @@ exports.registerStaff = async (req, res) => {
       role: 'staff'
     });
 
-    // GENERATE THE UNIQUE ID: Combines 'STF', current year, and the database primary key
     const currentYear = new Date().getFullYear();
     const generatedId = `STF-${currentYear}-${newStaff.id}`;
 
-    // Update the row with the newly generated ID
     await newStaff.update({ staff_id: generatedId });
 
     return res.status(201).json({
@@ -135,7 +134,6 @@ exports.getStaffById = async (req, res) => {
     try {
         const { id } = req.params;
 
-        // CRITICAL SECURITY CHECK: Compares database numeric ID
         if (req.user.role === 'staff' && String(req.user.id) !== String(id)) {
             return res.status(403).json({ message: 'Access denied. You can only access your own profile.' });
         }
@@ -160,7 +158,6 @@ exports.getStaffById = async (req, res) => {
 exports.updateStaff = async (req, res) => {
     try {
         const { id } = req.params;
-        // FIX: Included all potential body fields to prevent ReferenceErrors
         const { name, age, id_number, occupation, gender, password, education_level, institution_name } = req.body;
 
         if (req.user.role === 'staff' && String(req.user.id) !== String(id)) {
@@ -172,7 +169,6 @@ exports.updateStaff = async (req, res) => {
             return res.status(404).json({ message: 'Staff not found.' });
         }
 
-        // Build data payload dynamically based on updates provided
         const updatedData = {
             name: name || staff.name,
             gender: gender || staff.gender,
@@ -183,7 +179,6 @@ exports.updateStaff = async (req, res) => {
             institution_name: institution_name || staff.institution_name,
         };
 
-        // If user is altering their password, re-hash it securely
         if (password) {
             const salt = await bcrypt.genSalt(10);
             updatedData.password = await bcrypt.hash(password, salt);
@@ -218,180 +213,125 @@ exports.deleteStaff = async (req, res) => {
         return res.status(500).json({ message: 'Error deleting staff profile', error: error.message });
     }
 };
-
 // ==========================================
-// 6. STAFF LOGIN — STEP 1 (password check, issues UNVERIFIED token)
+// UPDATED STAFF LOGIN — STEP 1
 // ==========================================
 exports.loginStaff = async (req, res) => {
   try {
     const { staff_id, password } = req.body;
 
-    const user = await StaffUser.findOne({ where: { staff_id }, raw: true });
+    const user = await StaffUser.findOne({ where: { staff_id } });
     if (!user) {
-      return res.status(401).json({ message: 'Invalid Staff ID.' });
+      return res.status(401).json({ success: false, message: 'Invalid credentials.' });
     }
 
     const isMatch = await bcrypt.compare(password, user.password);
     if (!isMatch) {
-      return res.status(401).json({ message: 'Invalid Staff password.' });
+      return res.status(401).json({ success: false, message: 'Invalid credentials.' });
     }
 
-    // Trusted-device check — skip OTP if this browser already passed it before
-    if (isDeviceTrusted(req, user.id)) {
-      const fullToken = jwt.sign(
-        {
-          id: user.id,
-          staff_id: user.staff_id,
-          name: user.name,
-          gender: user.gender,
-          role: 'staff',
-          is2FAVerified: true
-        },
+    // Await the new database check 
+    const trusted = await isDeviceTrusted(req, user.id);
+    if (trusted) {
+      const token = jwt.sign(
+        { id: user.id, name: user.name, staff_id: user.staff_id, gender: user.gender, role: user.role, is2FAVerified: true },
         JWT_SECRET,
-        { expiresIn: '8h' }
+        { expiresIn: '2h' }
       );
 
       return res.status(200).json({
         success: true,
-        message: 'Login successful (trusted device).',
-        token: fullToken,
-        role: 'staff',
+        message: 'Login successful (Trusted Device Bypass).',
+        token: `Bearer ${token}`,
         requires2FA: false
       });
     }
 
-    // Not trusted — proceed with normal OTP flow
-    const otp = generateOtp();
-    otpStore.set(user.id, { otp, expiresAt: Date.now() + 5 * 60 * 1000 });
-    console.log(`[DEV ONLY] OTP for staff_id ${user.staff_id}: ${otp}`);
+    // Fallback if untrusted: Setup verification state
+    const otp = crypto.randomInt(100000, 999999).toString();
+    const expiresAt = Date.now() + 5 * 60 * 1000;
+    otpStore.set(user.id, { otp, expiresAt }); // Keep OTP in memory or move to Redis later
+
+    console.log(`[DEV ONLY] OTP Code for ${user.name}: ${otp}`);
 
     const tempToken = jwt.sign(
-      {
-        id: user.id,
-        staff_id: user.staff_id,
-        name: user.name,
-        gender: user.gender,
-        role: 'staff',
-        is2FAVerified: false
-      },
+      { id: user.id, role: user.role, is2FAVerified: false },
       JWT_SECRET,
       { expiresIn: '10m' }
     );
 
     return res.status(200).json({
       success: true,
-      message: '2FA required. Check your OTP delivery method.',
-      token: tempToken,
-      role: 'staff',
+      message: 'Verification code sent.',
+      token: `Bearer ${tempToken}`,
       requires2FA: true
     });
 
   } catch (error) {
-    return res.status(500).json({ message: 'Staff login error', error: error.message });
+    return res.status(500).json({ message: 'Login server error', error: error.message });
   }
 };
 
 // ==========================================
-// 7. STAFF LOGIN — STEP 2 (OTP check, issues FULLY VERIFIED token)
+// UPDATED STAFF LOGIN — STEP 2
 // ==========================================
-exports.verifyStaff2FA = async (req, res) => {
+exports.verifyOTP = async (req, res) => {
   try {
     const { otp } = req.body;
-    const userId = req.user.id;
+    const staffId = req.user.id; 
 
-    const record = otpStore.get(userId);
-    if (!record) {
-      return res.status(400).json({ message: 'No OTP request found. Please log in again.' });
-    }
+    const record = otpStore.get(staffId);
+    if (!record) return res.status(400).json({ success: false, message: 'No OTP requested or expired.' });
     if (Date.now() > record.expiresAt) {
-      otpStore.delete(userId);
-      return res.status(400).json({ message: 'OTP expired. Please log in again.' });
+      otpStore.delete(staffId);
+      return res.status(400).json({ success: false, message: 'OTP has expired.' });
     }
-    if (otp !== record.otp) {
-      return res.status(400).json({ message: 'Incorrect OTP.' });
-    }
+    if (record.otp !== String(otp)) return res.status(400).json({ success: false, message: 'Invalid verification code.' });
 
-    otpStore.delete(userId);
+    otpStore.delete(staffId);
+    const user = await StaffUser.findByPk(staffId);
+    
+    // Await the persistent cookie generation
+    await issueTrustedDeviceToken(user.id, res);
 
-    // Mark this browser as trusted for future logins
-    issueTrustedDeviceToken(userId, res);
-
-    const fullToken = jwt.sign(
-      {
-        id: req.user.id,
-        staff_id: req.user.staff_id,
-        name: req.user.name,
-        gender: req.user.gender,
-        role: 'staff',
-        is2FAVerified: true
-      },
+    const token = jwt.sign(
+      { id: user.id, name: user.name, staff_id: user.staff_id, gender: user.gender, role: user.role, is2FAVerified: true },
       JWT_SECRET,
-      { expiresIn: '8h' }
+      { expiresIn: '2h' }
     );
 
-    return res.status(200).json({
-      success: true,
-      message: '2FA verified. Device remembered for 30 days.',
-      token: fullToken,
-      role: 'staff'
-    });
-
+    return res.status(200).json({ success: true, message: 'MFA verified successfully.', token: `Bearer ${token}` });
   } catch (error) {
-    return res.status(500).json({ message: '2FA verification error', error: error.message });
-  }
-};
-// ==========================================
-// 8. REVOKE TRUSTED DEVICES
-// ==========================================
-
-// Revoke ALL trusted devices for the currently authenticated staff member
-// (e.g. "log out all devices" after a suspected password compromise)
-exports.revokeAllTrustedDevices = async (req, res) => {
-  try {
-    const staffId = req.user.id;
-    let revokedCount = 0;
-
-    for (const [token, record] of trustedDevices.entries()) {
-      if (record.staffId === staffId) {
-        trustedDevices.delete(token);
-        revokedCount++;
-      }
-    }
-
-    // Also clear the cookie on this current browser, since it's one of the ones just revoked
-    res.clearCookie('trustedDevice', {
-        httpOnly: true,
-        secure: process.env.NODE_ENV === 'production',
-        sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax'
-      });
-    return res.status(200).json({
-      success: true,
-      message: `Revoked ${revokedCount} trusted device(s). All devices will require verification code on next login.`
-    });
-  } catch (error) {
-    return res.status(500).json({ message: 'Error revoking trusted devices', error: error.message });
+    return res.status(500).json({ message: 'Verification error', error: error.message });
   }
 };
 
-// Revoke trust for ONLY the current browser (e.g. logging out of a shared/public computer)
+// ==========================================
+// UPDATED REVOCATION ENDPOINTS
+// ==========================================
 exports.revokeCurrentDevice = async (req, res) => {
   try {
     const deviceToken = req.cookies?.trustedDevice;
-
     if (deviceToken) {
-      trustedDevices.delete(deviceToken);
+      // Delete the specific token row out of MySQL
+      await TrustedDevice.destroy({ where: { device_token: deviceToken } });
     }
-
-    res.clearCookie('trustedDevice', {
-        httpOnly: true,
-        secure: process.env.NODE_ENV === 'production',
-        sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax'
-      });
-    return res.status(200).json({
-      success: true,
-      message: 'This device will require verification code on next login.'
-    });
+    res.clearCookie('trustedDevice');
+    return res.status(200).json({ success: true, message: 'This device has been forgotten.' });
   } catch (error) {
-    return res.status(500).json({ message: 'Error revoking device trust', error: error.message });
+    return res.status(500).json({ message: 'Error forgetting device', error: error.message });
   }
 };
+
+exports.revokeAllTrustedDevices = async (req, res) => {
+  try {
+    const staffId = req.user.id;
+    // Delete all tokens assigned to this user out of MySQL
+    await TrustedDevice.destroy({ where: { staff_id: staffId } });
+    res.clearCookie('trustedDevice');
+    return res.status(200).json({ success: true, message: 'All devices revoked successfully.' });
+  } catch (error) {
+    return res.status(500).json({ message: 'Error revoking all devices', error: error.message });
+  }
+};
+
