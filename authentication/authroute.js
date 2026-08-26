@@ -14,13 +14,15 @@ const {
 const { 
   registerStaff, 
   loginStaff, 
-  verifyStaff2FA, 
-  revokeAllTrustedDevices, revokeCurrentDevice, 
+  verifyOTP: verifyStaff2FA, // 👈 Change this line to map verifyOTP to verifyStaff2FA
+  revokeAllTrustedDevices, 
+  revokeCurrentDevice, 
   getAllStaff, 
-  getStaffById, // Safely imported from staff controller
+  getStaffById, 
   updateStaff, 
   deleteStaff 
 } = require('./staffauthcontroller');
+
 
 // Import your verified middleware
 const { verifyToken, verify2FA, authorizeRoles } = require('./authmidleware');
@@ -30,6 +32,7 @@ const { verifyToken, verify2FA, authorizeRoles } = require('./authmidleware');
 // ==========================================
 router.post('/student/register', registerStudent);
 router.post('/student/login', loginStudent);
+
 
 router.post('/staff/register', registerStaff); // Allowed public or handle admin restriction downstream
 router.post('/staff/login', loginStaff);
