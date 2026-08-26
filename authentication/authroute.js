@@ -20,7 +20,9 @@ const {
   getAllStaff, 
   getStaffById, 
   updateStaff, 
-  deleteStaff 
+  deleteStaff,
+  generateSSOTicket, // 👈 ADD THIS
+  exchangeSSOTicket  // 👈 ADD THIS
 } = require('./staffauthcontroller');
 
 
@@ -28,8 +30,8 @@ const {
 const { verifyToken, verify2FA, authorizeRoles } = require('./authmidleware');
 
 
-router.post('/auth/generate-sso-ticket', verifyToken, staffauthcontroller.generateSSOTicket);
-router.post('/auth/exchange-sso-ticket', staffauthcontroller.exchangeSSOTicket);
+router.post('/auth/generate-sso-ticket', verifyToken, generateSSOTicket);
+router.post('/auth/exchange-sso-ticket', exchangeSSOTicket);
 
 // ==========================================
 // 1. PUBLIC ROUTES (No Token Needed)
