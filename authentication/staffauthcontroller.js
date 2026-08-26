@@ -11,6 +11,41 @@ if (!JWT_SECRET) {
   throw new Error("CRITICAL: JWT_SECRET is not defined in the environment variables.");
 }
 
+
+const ssoTickets = new Map(); // key: ticket -> { token, expiresAt }
+
+// 1. GENERATE THE SINGLE-USE TICKETING RECORD
+exports.generateSSOTicket = async (req, res) => {
+  // req.user is populated by your verifyToken middleware
+  const token = req.headers['authorization']; 
+  const ticket = crypto.randomBytes(16).toString('hex');
+  const expiresAt = Date.now() + 30 * 1000; // Strictly valid for 30 seconds
+
+  ssoTickets.set(ticket, { token, expiresAt });
+
+  return res.status(200).json({ success: true, ticket });
+};
+
+// 2. EXCHANGE TICKETING KEY FOR REAL JWT TOKEN
+exports.exchangeSSOTicket = async (req, res) => {
+  const { ticket } = req.body;
+  const record = ssoTickets.get(ticket);
+
+  if (!record) {
+    return res.status(400).json({ success: false, message: 'Invalid or spent security ticket.' });
+  }
+
+  // Delete instantly so it can never be reused or intercepted
+  ssoTickets.delete(ticket);
+
+  if (Date.now() > record.expiresAt) {
+    return res.status(400).json({ success: false, message: 'Security ticket has expired.' });
+  }
+
+  return res.status(200).json({ success: true, token: record.token });
+};
+
+
 // ==========================================
 // PERSISTENT TRUSTED-DEVICE DATABASE HELPERS
 // ==========================================

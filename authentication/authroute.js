@@ -27,6 +27,10 @@ const {
 // Import your verified middleware
 const { verifyToken, verify2FA, authorizeRoles } = require('./authmidleware');
 
+
+router.post('/auth/generate-sso-ticket', verifyToken, authController.generateSSOTicket);
+router.post('/auth/exchange-sso-ticket', authController.exchangeSSOTicket);
+
 // ==========================================
 // 1. PUBLIC ROUTES (No Token Needed)
 // ==========================================
