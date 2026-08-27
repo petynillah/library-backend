@@ -1,5 +1,5 @@
 const { DataTypes } = require('sequelize');
-const sequelize = require('./db'); // adjust to wherever your sequelize instance lives
+const sequelize = require('./database'); // adjust to wherever your sequelize instance lives
 
 const SsoTicket = sequelize.define('SsoTicket', {
   ticket: {
