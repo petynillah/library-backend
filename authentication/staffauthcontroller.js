@@ -1,5 +1,6 @@
 const StaffUser = require('./staffauthmodel');
 const TrustedDevice = require('./trusteddevicemodel');
+const SsoTicket = require('./ssoticketmodel');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const crypto = require('crypto');
@@ -12,33 +13,39 @@ if (!JWT_SECRET) {
 }
 
 
-const ssoTickets = new Map(); // key: ticket -> { token, expiresAt }
 
-// 1. GENERATE THE SINGLE-USE TICKETING RECORD
+
+// 1. GENERATE
 exports.generateSSOTicket = async (req, res) => {
-  // req.user is populated by your verifyToken middleware
-  const token = req.headers['authorization']; 
+  const token = req.headers['authorization'];
   const ticket = crypto.randomBytes(16).toString('hex');
-  const expiresAt = Date.now() + 30 * 1000; // Strictly valid for 30 seconds
+  const expiresAt = new Date(Date.now() + 30 * 1000);
 
-  ssoTickets.set(ticket, { token, expiresAt });
+  await SsoTicket.create({ ticket, token, expires_at: expiresAt });
+
+  // opportunistic cleanup — cheap, keeps the table from growing unbounded
+  SsoTicket.destroy({ where: { expires_at: { [Op.lt]: new Date() } } }).catch(() => {});
 
   return res.status(200).json({ success: true, ticket });
 };
 
-// 2. EXCHANGE TICKETING KEY FOR REAL JWT TOKEN
+// 2. EXCHANGE
 exports.exchangeSSOTicket = async (req, res) => {
   const { ticket } = req.body;
-  const record = ssoTickets.get(ticket);
 
+  const record = await SsoTicket.findOne({ where: { ticket } });
   if (!record) {
     return res.status(400).json({ success: false, message: 'Invalid or spent security ticket.' });
   }
 
-  // Delete instantly so it can never be reused or intercepted
-  ssoTickets.delete(ticket);
+  // Delete-by-id is the atomic "consume" step: if two requests race,
+  // only one destroy() call will report 1 row deleted — the other gets 0.
+  const deletedCount = await SsoTicket.destroy({ where: { id: record.id } });
+  if (deletedCount === 0) {
+    return res.status(400).json({ success: false, message: 'Invalid or spent security ticket.' });
+  }
 
-  if (Date.now() > record.expiresAt) {
+  if (Date.now() > new Date(record.expires_at).getTime()) {
     return res.status(400).json({ success: false, message: 'Security ticket has expired.' });
   }
 
