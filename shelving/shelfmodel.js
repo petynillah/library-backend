@@ -21,7 +21,7 @@ const Shelf = {
         let replacements = [];
         if (search) {
             query += ` WHERE shelf_number LIKE ? OR shelf_category LIKE ? OR book_category LIKE ?`;
-            replacements = [`%${search}%`, `%${search}%`, `%${search}%`];
+            replacements = [search.trim().toUpperCase(), `%${search}%`, `%${search}%`];
         }
         try {
             const results = await db.query(query, {
