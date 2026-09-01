@@ -1,10 +1,40 @@
 const Book = require('./bmodel');
 
 // ==========================================
+// Shared ISBN validator
+// ==========================================
+function normalizeAndValidateIsbn(rawIsbn) {
+    if (!rawIsbn) {
+        return { valid: false, error: "ISBN number is required." };
+    }
+
+    const cleaned = rawIsbn.trim().toUpperCase().replace(/[-\s]/g, '');
+
+    const isValidIsbn10 = /^\d{9}[\dX]$/.test(cleaned);
+    const isValidIsbn13 = /^\d{13}$/.test(cleaned);
+
+    if (!isValidIsbn10 && !isValidIsbn13) {
+        return {
+            valid: false,
+            error: `"${cleaned}" is not a valid ISBN format. Expected 10 digits (ISBN-10) or 13 digits (ISBN-13).`
+        };
+    }
+
+    return { valid: true, isbn: cleaned };
+}
+
+// ==========================================
 // 1. CREATE
 // ==========================================
 exports.addBook = (req, res) => {
-    Book.create(req.body, (err, result) => {
+    const validation = normalizeAndValidateIsbn(req.body.isbn_number);
+    if (!validation.valid) {
+        return res.status(400).json({ error: validation.error, code: "INVALID_ISBN_FORMAT" });
+    }
+
+    const bookData = { ...req.body, isbn_number: validation.isbn };
+
+    Book.create(bookData, (err, result) => {
         if (err) return res.status(500).json({ error: err.message });
         res.status(201).json({ message: "Book added successfully!" });
     });
@@ -28,6 +58,7 @@ exports.getAvailableBooks = (req, res) => {
         res.status(200).json(results);
     });
 };
+
 exports.getBookDetailsByIsbn = (req, res) => {
     const isbn = req.params.isbn;
 
@@ -50,7 +81,11 @@ exports.getBookDetailsByIsbn = (req, res) => {
 // 3. UPDATE
 // ==========================================
 exports.updateBook = (req, res) => {
-    Book.update(req.params.isbn, req.body, (err, result) => {
+    // ISBN is immutable after creation — strip it out even if the caller sends one,
+    // so nobody is misled into thinking a rename happened.
+    const { isbn_number, ...updateData } = req.body;
+
+    Book.update(req.params.isbn, updateData, (err, result) => {
         if (err) return res.status(500).json({ error: err.message });
         res.status(200).json({ message: "Book updated successfully!" });
     });
@@ -78,7 +113,7 @@ exports.borrowBook = (req, res) => {
 
     // Normalize inputs before any validation or storage happens
     student_id = student_id.trim().toUpperCase();
-    isbn_number = isbn_number.trim().toUpperCase();
+    isbn_number = isbn_number.trim().toUpperCase().replace(/[-\s]/g, '');
 
     // Date Standardizer (Ensures clean YYYY-MM-DD format for MySQL)
     let safeBorrowDate = borrow_date;
