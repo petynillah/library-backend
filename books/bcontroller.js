@@ -70,11 +70,15 @@ exports.deleteBook = (req, res) => {
 // 5. BORROW (with full validation chain)
 // ==========================================
 exports.borrowBook = (req, res) => {
-    const { student_id, isbn_number, borrow_date } = req.body;
+    let { student_id, isbn_number, borrow_date } = req.body;
 
     if (!student_id || !isbn_number) {
         return res.status(400).json({ error: "Student ID and ISBN number are required fields." });
     }
+
+    // Normalize inputs before any validation or storage happens
+    student_id = student_id.trim().toUpperCase();
+    isbn_number = isbn_number.trim().toUpperCase();
 
     // Date Standardizer (Ensures clean YYYY-MM-DD format for MySQL)
     let safeBorrowDate = borrow_date;
@@ -129,6 +133,8 @@ exports.borrowBook = (req, res) => {
 
                     const finalizedData = {
                         ...req.body,
+                        student_id,
+                        isbn_number,
                         borrow_date: safeBorrowDate
                     };
 
@@ -142,7 +148,6 @@ exports.borrowBook = (req, res) => {
         });
     });
 };
-
 // ==========================================
 // 6. BORROW HISTORY / RETURN
 // ==========================================

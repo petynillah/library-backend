@@ -191,7 +191,15 @@ const { QueryTypes } = require('sequelize');
     const searchString = String(studentId).trim();
 
     const query = `
-        SELECT br.student_id, br.student_name, b.book_title, br.isbn_number, br.borrow_date 
+        SELECT 
+            br.student_id, 
+            br.student_name, 
+            COALESCE(b.book_title, 'Unknown Book') AS book_title, 
+            br.isbn_number, 
+            COALESCE(b.author, 'N/A') AS author,
+            COALESCE(b.category, 'Uncategorized') AS category,
+            COALESCE(b.sub_category, '') AS sub_category,
+            br.borrow_date 
         FROM borrowings br
         JOIN books b ON br.isbn_number = b.isbn_number
         WHERE br.student_id = ? AND br.status = 'active'`;
@@ -200,7 +208,7 @@ const { QueryTypes } = require('sequelize');
             replacements: [searchString],
             type: QueryTypes.SELECT
         });
-        callback(null, results); // always an array, empty or not
+        callback(null, results);
     } catch (err) {
         callback(err, null);
     }
